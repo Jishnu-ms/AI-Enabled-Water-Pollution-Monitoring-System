@@ -51,7 +51,7 @@ const HOME: Point = {
 
 export default function App() {
 
-  const [home, setHome] =
+  const [home] =
     useState<Point>(HOME);
 
   const [center, setCenter] =
