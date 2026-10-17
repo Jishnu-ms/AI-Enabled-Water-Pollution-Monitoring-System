@@ -1,3 +1,4 @@
+
 import type {
   Measurement,
   Status,
@@ -5,31 +6,55 @@ import type {
   WasteDetectionResponse,
 } from "./types";
 
-const A = "/sim";
-const YOLO = "/yolo";
+// Configure these in your frontend hosting environment.
+const SIMULATOR_URL = (
+  import.meta.env.VITE_SIMULATOR_URL ||
+  "/sim"
+).replace(/\/+$/, "");
+
+const YOLO_URL = (
+  import.meta.env.VITE_YOLO_URL ||
+  "/yolo"
+).replace(/\/+$/, "");
+
+function simulatorUrl(path: string): string {
+  // Already an absolute URL
+  if (/^https?:\/\//i.test(path)) return path;
+
+  // With a direct Render base URL, append the relative path.
+  if (/^https?:\/\//i.test(SIMULATOR_URL)) {
+    return `${SIMULATOR_URL}/${path.replace(/^\/+/, "")}`;
+  }
+
+  return `${SIMULATOR_URL}/${path.replace(/^\/+/, "")}`;
+}
+
+async function readJson(response: Response): Promise<any> {
+  return response.json().catch(() => null);
+}
+
+function errorMessage(body: any, fallback: string): string {
+  if (typeof body?.detail === "string") return body.detail;
+  if (typeof body?.error === "string") return body.error;
+  return fallback;
+}
 
 export async function startMission(
   id: number,
   wps: Waypoint[],
   interval: number
 ) {
-  const waypoints = wps.map((p, index) => ({
-    lat: Number(p.lat),
-    lon: Number(p.lng),
-    point_index: index + 1,
-  }));
-
   const payload = {
     mission_id: Number(id),
     interval_seconds: Number(interval),
-    waypoints,
+    waypoints: wps.map((p, index) => ({
+      lat: Number(p.lat),
+      lon: Number(p.lng),
+      point_index: index + 1,
+    })),
   };
 
-  console.log("========== WATERBOAT REQUEST ==========");
-  console.log(JSON.stringify(payload, null, 2));
-  console.log("========================================");
-
-  const r = await fetch(A + "/waypoints", {
+  const response = await fetch(simulatorUrl("/waypoints"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -38,20 +63,11 @@ export async function startMission(
     body: JSON.stringify(payload),
   });
 
-  const body = await r.json().catch(() => null);
+  const body = await readJson(response);
 
-  console.log("========== SIMULATOR RESPONSE ==========");
-  console.log("HTTP:", r.status);
-  console.log(body);
-  console.log("=========================================");
-
-  if (!r.ok) {
+  if (!response.ok) {
     throw new Error(
-      typeof body?.detail === "string"
-        ? body.detail
-        : JSON.stringify(
-            body?.detail ?? "Mission start failed"
-          )
+      errorMessage(body, `Mission start failed (${response.status})`)
     );
   }
 
@@ -59,75 +75,72 @@ export async function startMission(
 }
 
 export async function status(): Promise<Status> {
-  const r = await fetch(A + "/status");
+  const response = await fetch(simulatorUrl("/status"));
 
-  if (!r.ok) {
-    throw new Error("Could not get simulator status");
+  if (!response.ok) {
+    throw new Error(`Could not get simulator status (${response.status})`);
   }
 
-  return r.json();
+  return response.json();
 }
 
 export async function stop() {
-  const r = await fetch(A + "/stop", {
+  const response = await fetch(simulatorUrl("/stop"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      reason: "operator_stop",
-    }),
+    body: JSON.stringify({ reason: "operator_stop" }),
   });
 
-  if (!r.ok) {
-    throw new Error("Could not stop mission");
+  const body = await readJson(response);
+
+  if (!response.ok) {
+    throw new Error(
+      errorMessage(body, `Could not stop mission (${response.status})`)
+    );
   }
 
-  return r.json();
+  return body;
 }
 
 export function stream(
-  cb: (m: Measurement) => void,
+  cb: (measurement: Measurement) => void,
   err: () => void
 ) {
-  const e = new EventSource(
-    A + "/measurements/stream"
+  const eventSource = new EventSource(
+    simulatorUrl("/measurements/stream")
   );
 
-  e.addEventListener(
-    "measurement",
-    (x) => {
-      try {
-        const measurement = JSON.parse(
-          (x as MessageEvent).data
-        ) as Measurement;
+  eventSource.addEventListener("measurement", (event) => {
+    try {
+      const measurement = JSON.parse(
+        (event as MessageEvent).data
+      ) as Measurement;
 
-        cb(measurement);
-      } catch (error) {
-        console.error(
-          "Invalid measurement event:",
-          error
-        );
-      }
+      cb(measurement);
+    } catch (error) {
+      console.error("Invalid measurement event:", error);
     }
-  );
+  });
 
-  e.onerror = () => {
+  eventSource.onerror = () => {
     err();
   };
 
-  return () => {
-    e.close();
-  };
+  return () => eventSource.close();
 }
 
 export async function detectWaste(
   imageUrl: string,
   filename: string
 ): Promise<WasteDetectionResponse> {
-  const imageResponse = await fetch(
-    A + imageUrl
-  );
+  // Resolve camera image URLs correctly.
+  const resolvedImageUrl = /^https?:\/\//i.test(imageUrl)
+    ? imageUrl
+    : simulatorUrl(imageUrl);
+
+  const imageResponse = await fetch(resolvedImageUrl);
 
   if (!imageResponse.ok) {
     throw new Error(
@@ -135,38 +148,27 @@ export async function detectWaste(
     );
   }
 
-  const blob = await imageResponse.blob();
-
+  const imageBlob = await imageResponse.blob();
   const form = new FormData();
 
-  form.append(
-    "file",
-    blob,
-    filename || "camera-image.jpg"
-  );
+  form.append("file", imageBlob, filename || "camera-image.jpg");
 
-  const response = await fetch(
-    YOLO + "/predict",
-    {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-      },
-      body: form,
-    }
-  );
+  const response = await fetch(`${YOLO_URL}/predict`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+    },
+    body: form,
+  });
 
-  const body = await response
-    .json()
-    .catch(() => null);
+  const body = await readJson(response);
 
   if (!response.ok) {
     throw new Error(
-      typeof body?.detail === "string"
-        ? body.detail
-        : `YOLO prediction failed (${response.status})`
+      errorMessage(body, `YOLO prediction failed (${response.status})`)
     );
   }
 
   return body as WasteDetectionResponse;
 }
+
