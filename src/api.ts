@@ -12,10 +12,12 @@ const SIMULATOR_URL = (
   "/sim"
 ).replace(/\/+$/, "");
 
+
 const YOLO_URL = (
   import.meta.env.VITE_YOLO_URL ||
-  "/yolo"
+  "https://yolo11-zwvx.onrender.com"
 ).replace(/\/+$/, "");
+
 
 function simulatorUrl(path: string): string {
   // Already an absolute URL
