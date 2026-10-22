@@ -1815,9 +1815,7 @@ export default function App() {
 
             <img
 
-              src={
-                `/sim${selected.camera.image_url}`
-              }
+              src={selected.camera.image_url}
 
               alt={
                 selected.camera.filename
