@@ -1813,23 +1813,123 @@ export default function App() {
             )}
 
 
-            <img
+            {/* Camera image with real YOLO bounding boxes */}
+            {(() => {
+              const result = waste.get(selected.point_index);
+              const imageWidth = result?.image_width ?? 0;
+              const imageHeight = result?.image_height ?? 0;
+              const detections =
+                result && !result.error && imageWidth > 0 && imageHeight > 0
+                  ? result.detections.filter(
+                      (detection) =>
+                        Array.isArray(detection.bbox) &&
+                        detection.bbox.length === 4 &&
+                        detection.bbox.every(Number.isFinite)
+                    )
+                  : [];
 
-              src={selected.camera.image_url}
+              return (
+                <div
+                  style={{
+                    position: "relative",
+                    width: "100%",
+                    overflow: "hidden",
+                    borderRadius: "14px",
+                    background: "#101827",
+                    lineHeight: 0,
+                    marginTop: "12px",
+                  }}
+                >
+                  <img
+                    src={selected.camera.image_url}
+                    alt={selected.camera.filename}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      height: "auto",
+                    }}
+                    onError={(event) => {
+                      console.error(
+                        "Camera image failed to load:",
+                        event.currentTarget.src
+                      );
+                    }}
+                  />
 
-              alt={
-                selected.camera.filename
-              }
+                  {detections.map((detection, index) => {
+                    const [x1, y1, x2, y2] = detection.bbox;
+                    const left = Math.max(0, Math.min(100, (x1 / imageWidth) * 100));
+                    const top = Math.max(0, Math.min(100, (y1 / imageHeight) * 100));
+                    const right = Math.max(0, Math.min(100, (x2 / imageWidth) * 100));
+                    const bottom = Math.max(0, Math.min(100, (y2 / imageHeight) * 100));
+                    const width = right - left;
+                    const height = bottom - top;
 
-            />
+                    if (width <= 0 || height <= 0) return null;
 
+                    return (
+                      <div
+                        key={`${detection.class}-${index}`}
+                        style={{
+                          position: "absolute",
+                          left: `${left}%`,
+                          top: `${top}%`,
+                          width: `${width}%`,
+                          height: `${height}%`,
+                          boxSizing: "border-box",
+                          border: "2px solid #00f5a0",
+                          borderRadius: "4px",
+                          pointerEvents: "none",
+                          boxShadow: "0 0 8px rgba(0,245,160,0.4)",
+                        }}
+                      >
+                        <span
+                          style={{
+                            position: "absolute",
+                            left: "-2px",
+                            top: "-25px",
+                            padding: "5px 8px",
+                            borderRadius: "5px 5px 5px 0",
+                            background: "#00c982",
+                            color: "#06281c",
+                            fontSize: "12px",
+                            fontWeight: 800,
+                            lineHeight: 1.2,
+                            whiteSpace: "nowrap",
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
+                          }}
+                        >
+                          {detection.class} {Math.round(detection.confidence * 100)}%
+                        </span>
+                      </div>
+                    );
+                  })}
 
-            <small>
+                  {detections.length > 0 && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "10px",
+                        right: "10px",
+                        padding: "7px 10px",
+                        borderRadius: "8px",
+                        background: "rgba(5,20,30,0.88)",
+                        color: "#00f5a0",
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        lineHeight: 1.2,
+                        pointerEvents: "none",
+                      }}
+                    >
+                      {detections.length} OBJECT{detections.length === 1 ? "" : "S"} DETECTED
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
-              {
-                selected.camera.filename
-              }
-
+            <small style={{ display: "block", marginTop: "10px" }}>
+              {selected.camera.filename}
             </small>
 
           </div>
