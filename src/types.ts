@@ -34,6 +34,7 @@ export type Measurement = {
 export type WasteDetection = {
   class: string;
   confidence: number;
+  /** [x1, y1, x2, y2] in original image pixel coordinates */
   bbox: [number, number, number, number];
 };
 
